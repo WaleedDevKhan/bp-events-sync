@@ -3,7 +3,7 @@
  * Plugin Name: BP Events Sync
  * Plugin URI:  https://businesspost.ie
  * Description: Syncs speakers, judges, and sponsors from the BP Events central CMS API into local WordPress CPTs.
- * Version:     1.0.3
+ * Version:     1.0.4
  * Author:      Business Post
  * Author URI:  https://businesspost.ie
  * Text Domain: bp-events-sync
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // ── Plugin Constants ────────────────────────────────────────────────────────
-define( 'BPES_VERSION', '1.0.3' );
+define( 'BPES_VERSION', '1.0.4' );
 define( 'BPES_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BPES_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'BPES_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
@@ -33,8 +33,6 @@ $bpes_updater = PucFactory::buildUpdateChecker(
     'bp-events-sync'
 );
 $bpes_updater->setBranch( 'main' );
-$bpes_updater->setAuthentication( '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' );
-$bpes_updater->getVcsApi()->enableReleaseAssets();
 
 // ── Autoloader ──────────────────────────────────────────────────────────────
 spl_autoload_register( function ( $class ) {
