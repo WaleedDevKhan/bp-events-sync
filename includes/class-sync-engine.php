@@ -594,6 +594,7 @@ class Sync_Engine {
 
             if ( $combined ) {
                 update_post_meta( $post_id, 'job-title', sanitize_text_field( $combined ) );
+                update_post_meta( $post_id, 'position', sanitize_text_field( $combined ) );
             }
         }
 
