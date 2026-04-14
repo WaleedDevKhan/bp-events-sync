@@ -1,0 +1,245 @@
+/**
+ * BP Events Sync — Admin Styles
+ */
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+.bpes-settings-wrap {
+    max-width: 900px;
+}
+
+.bpes-settings-wrap h2 {
+    margin-top: 1.5em;
+}
+
+.bpes-settings-wrap hr {
+    margin: 2em 0;
+    border: none;
+    border-top: 1px solid #ddd;
+}
+
+/* ── CPT Blocks ─────────────────────────────────────────────────── */
+.bpes-cpt-block {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 12px 20px;
+    margin-bottom: 16px;
+}
+
+.bpes-cpt-block h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+.bpes-cpt-block h3 label {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bpes-cpt-config .form-table th {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    width: 200px;
+}
+
+/* ── Taxonomy radio list ────────────────────────────────────────── */
+.bpes-tax-list label {
+    display: block;
+    padding: 4px 0;
+}
+
+.bpes-tax-list .bpes-tax-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+}
+
+.bpes-tax-list .bpes-tax-item code {
+    font-size: 12px;
+    color: #666;
+}
+
+/* ── Connection Status ──────────────────────────────────────────── */
+.bpes-status-msg {
+    margin-left: 10px;
+    font-weight: 500;
+}
+
+.bpes-status-msg.success {
+    color: #00a32a;
+}
+
+.bpes-status-msg.error {
+    color: #d63638;
+}
+
+.bpes-status-msg.loading {
+    color: #666;
+}
+
+/* ── Sync Panel ─────────────────────────────────────────────────── */
+#bpes-sync-panel {
+    margin-top: 16px;
+}
+
+.bpes-sync-row {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+}
+
+.bpes-sync-row h3 {
+    margin: 0 0 10px;
+}
+
+.bpes-sync-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.bpes-last-sync {
+    color: #666;
+}
+
+.bpes-last-sync.bpes-never {
+    color: #996800;
+}
+
+.bpes-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.bpes-badge-ok {
+    background: #e6f4ea;
+    color: #1e7e34;
+}
+
+.bpes-badge-pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* ── Sync Buttons ───────────────────────────────────────────────── */
+.bpes-sync-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.bpes-sync-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ── Sync Results ───────────────────────────────────────────────── */
+.bpes-sync-results {
+    margin-top: 12px;
+    background: #f6f7f7;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 12px 16px;
+}
+
+.bpes-stats {
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.bpes-stats span {
+    margin-right: 16px;
+    font-weight: 500;
+}
+
+.bpes-stats .created { color: #00a32a; }
+.bpes-stats .updated { color: #0073aa; }
+.bpes-stats .deleted { color: #b32d2e; }
+.bpes-stats .errors  { color: #d63638; }
+.bpes-stats .skipped { color: #666; }
+
+.bpes-log {
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.5;
+    background: #fff;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ── Cache Panel ────────────────────────────────────────────────── */
+.bpes-cache-panel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+/* ── Colour Pickers ─────────────────────────────────────────────── */
+.bpes-color-picker {
+    width: 40px;
+    height: 34px;
+    padding: 2px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.bpes-color-hex {
+    width: 80px;
+    font-family: monospace;
+    font-size: 13px;
+    vertical-align: middle;
+    margin-left: 4px;
+    margin-right: 8px;
+}
+
+/* ── Code Blocks ────────────────────────────────────────────────── */
+.bpes-code-block {
+    background: #f0f0f1;
+    border: 1px solid #c3c4c7;
+    border-left: 4px solid #2271b1;
+    border-radius: 2px;
+    padding: 12px 16px;
+    margin: 10px 0 16px;
+    max-width: 800px;
+}
+
+.bpes-code-block code {
+    background: none;
+    padding: 0;
+    font-size: 13px;
+    color: #1d2327;
+}
+
+/* ── Spinner ────────────────────────────────────────────────────── */
+.bpes-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ccc;
+    border-top-color: #0073aa;
+    border-radius: 50%;
+    animation: bpes-spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-left: 6px;
+}
+
+@keyframes bpes-spin {
+    to { transform: rotate(360deg); }
+}

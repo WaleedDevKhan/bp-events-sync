@@ -1,0 +1,103 @@
+/**
+ * BP Events Sync — Gallery Grid Styles
+ * Lightbox styles are handled by LightGallery CSS.
+ */
+
+/* ── Grid ────────────────────────────────────────────────────────── */
+.bpes-gallery {
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 16px;
+    box-sizing: border-box;
+}
+
+.bpes-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.bpes-gallery[data-columns="1"] .bpes-gallery-grid { grid-template-columns: repeat(1, 1fr); }
+.bpes-gallery[data-columns="2"] .bpes-gallery-grid { grid-template-columns: repeat(2, 1fr); }
+.bpes-gallery[data-columns="3"] .bpes-gallery-grid { grid-template-columns: repeat(3, 1fr); }
+.bpes-gallery[data-columns="4"] .bpes-gallery-grid { grid-template-columns: repeat(4, 1fr); }
+.bpes-gallery[data-columns="5"] .bpes-gallery-grid { grid-template-columns: repeat(5, 1fr); }
+.bpes-gallery[data-columns="6"] .bpes-gallery-grid { grid-template-columns: repeat(6, 1fr); }
+
+/* ── Gallery Items ───────────────────────────────────────────────── */
+.bpes-gallery-item {
+    display: block;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    border-radius: 2px;
+    aspect-ratio: 4 / 3;
+}
+
+.bpes-gallery-item img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.bpes-gallery-item:hover img {
+    transform: scale(1.03);
+    opacity: 0.9;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+    .bpes-gallery[data-columns="5"] .bpes-gallery-grid,
+    .bpes-gallery[data-columns="6"] .bpes-gallery-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 992px) {
+    .bpes-gallery-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .bpes-gallery-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+
+    .bpes-gallery {
+        padding: 0 8px;
+    }
+}
+
+@media (max-width: 480px) {
+    .bpes-gallery-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 6px;
+    }
+}
+
+/* ── LightGallery Overrides ──────────────────────────────────────── */
+.lg-backdrop {
+    z-index: 99999;
+}
+
+.lg-outer {
+    z-index: 99999;
+}
+
+/* ── Error / Empty States ────────────────────────────────────────── */
+.bpes-gallery-error {
+    color: #d63638;
+    padding: 16px;
+    text-align: center;
+}
+
+.bpes-gallery-empty {
+    color: #666;
+    padding: 32px 16px;
+    text-align: center;
+    font-style: italic;
+}
