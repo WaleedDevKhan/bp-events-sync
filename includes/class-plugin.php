@@ -86,7 +86,7 @@ class Plugin {
         add_filter( 'jet-engine/listing/grid/posts-query-args', [ $this, 'sort_jet_listing_by_menu_order' ] );
 
         // Auto-sort JetEngine terms listings by tier_sort_order for sponsor tiers.
-        add_filter( 'jet-engine/listing/grid/terms-query-args', [ $this, 'sort_jet_terms_by_tier_order' ] );
+        // add_filter( 'jet-engine/listing/grid/terms-query-args', [ $this, 'sort_jet_terms_by_tier_order' ] );
 
     }
 
