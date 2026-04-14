@@ -178,16 +178,16 @@ class Plugin {
             return $args;
         }
 
-        $args['orderby']    = 'meta_value_num';
-        $args['meta_key']   = '_bpes_tier_sort_order';
-        $args['order']      = 'ASC';
+        $args['orderby'] = 'tier_order_clause';
+        $args['order']   = 'ASC';
 
-        // Include terms even if they don't have the meta key set yet
-        // (they'll be sorted as 0 and appear first).
+        // Named clause avoids the INNER JOIN that top-level meta_key forces,
+        // so terms without the meta are still included (sorted last).
         $args['meta_query'] = [
             'relation' => 'OR',
-            [
+            'tier_order_clause' => [
                 'key'     => '_bpes_tier_sort_order',
+                'type'    => 'NUMERIC',
                 'compare' => 'EXISTS',
             ],
             [
