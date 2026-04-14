@@ -34,6 +34,7 @@ $bpes_updater = PucFactory::buildUpdateChecker(
 );
 $bpes_updater->setBranch( 'main' );
 $bpes_updater->setAuthentication( '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' );
+$bpes_updater->getVcsSource()->enableReleaseAssets();
 
 // ── Autoloader ──────────────────────────────────────────────────────────────
 spl_autoload_register( function ( $class ) {
