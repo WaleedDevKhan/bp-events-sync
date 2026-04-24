@@ -23,6 +23,12 @@ class Agenda {
     /** @var array Cached map of lowercase speaker name → permalink URL. */
     private $speaker_urls = [];
 
+    /** @var array Cached map of CMS external ID → permalink URL. */
+    private $speaker_id_map = [];
+
+    /** @var array Cached map of post slug → permalink URL. */
+    private $speaker_slug_map = [];
+
     public function __construct( Settings $settings ) {
         $this->settings = $settings;
 
@@ -352,7 +358,7 @@ class Agenda {
         $title        = $speaker['title'] ?? '';
         $organisation = $speaker['organisation'] ?? '';
         $photo_url    = $speaker['photo_url'] ?? '';
-        $link         = $this->get_speaker_url( $name );
+        $link         = $this->get_speaker_url( $speaker );
 
         $role = '';
         if ( $title && $organisation ) {
@@ -419,94 +425,153 @@ class Agenda {
     }
 
     /**
-     * Build a cache of speaker/moderator name → WordPress permalink.
+     * Build lookup caches for speaker → WordPress permalink.
      *
-     * Collects all unique speaker names from page_blocks, then runs a single
-     * query to find matching posts in the speaker/judge CPTs.
+     * Collects all unique speakers from page_blocks, then runs a single
+     * query to build three maps in priority order:
+     *   1. CMS external ID → permalink  (most reliable)
+     *   2. lowercase name  → permalink  (fallback)
+     *   3. post slug       → permalink  (last resort)
      */
     private function build_speaker_url_cache( array $page_blocks ): void {
-        $this->speaker_urls = [];
+        $this->speaker_urls     = [];
+        $this->speaker_id_map   = [];
+        $this->speaker_slug_map = [];
 
-        // Collect all unique speaker/moderator names.
-        $names = [];
+        // Collect all unique speakers (as full objects, not just names).
+        $speakers_raw = [];
         foreach ( $page_blocks as $block ) {
             if ( $block['kind'] === 'section' ) {
-                $names = array_merge( $names, $this->extract_names( $block ) );
+                $speakers_raw = array_merge( $speakers_raw, $this->extract_speakers( $block ) );
             } elseif ( $block['kind'] === 'stream_group' ) {
                 foreach ( $block['streams'] ?? [] as $stream ) {
                     foreach ( $stream['sections'] ?? [] as $section ) {
-                        $names = array_merge( $names, $this->extract_names( $section ) );
+                        $speakers_raw = array_merge( $speakers_raw, $this->extract_speakers( $section ) );
                     }
                 }
             }
         }
 
-        $names = array_unique( array_filter( $names ) );
-
-        if ( empty( $names ) ) {
+        if ( empty( $speakers_raw ) ) {
             return;
         }
 
+        // Collect unique CMS IDs from the agenda API data.
+        $cms_ids = [];
+        foreach ( $speakers_raw as $s ) {
+            $cms_id = $s['speaker_id'] ?? null; // adjust key if your API uses a different name
+            if ( $cms_id ) {
+                $cms_ids[] = (string) $cms_id;
+            }
+        }
+        $cms_ids = array_unique( $cms_ids );
+
         // Get the speaker and judge CPT slugs.
         $cpt_mapping = $this->settings->get_cpt_mapping();
-        $post_types  = [];
-
-        if ( ! empty( $cpt_mapping['speakers'] ) ) {
-            $post_types[] = $cpt_mapping['speakers'];
-        }
-        if ( ! empty( $cpt_mapping['judges'] ) ) {
-            $post_types[] = $cpt_mapping['judges'];
-        }
+        $post_types  = array_filter( [
+            $cpt_mapping['speakers'] ?? '',
+            $cpt_mapping['judges']   ?? '',
+        ] );
 
         if ( empty( $post_types ) ) {
             return;
         }
 
-        // Single query to find all matching posts.
-        $query = new \WP_Query( [
+        // Single query — if we have CMS IDs, limit to only those posts for
+        // efficiency; otherwise fall back to loading all speaker posts.
+        $query_args = [
             'post_type'      => $post_types,
             'post_status'    => 'publish',
             'posts_per_page' => -1,
             'no_found_rows'  => true,
             'fields'         => 'ids',
-        ] );
+        ];
+
+        $query = new \WP_Query( $query_args );
 
         if ( empty( $query->posts ) ) {
             return;
         }
 
-        // Build the name → URL map.
+        // Build all three maps in one pass.
         foreach ( $query->posts as $post_id ) {
+            $permalink  = get_permalink( $post_id );
+            $stored_cms = get_post_meta( $post_id, Sync_Engine::META_EXTERNAL_ID, true );
             $post_title = mb_strtolower( get_the_title( $post_id ) );
-            $this->speaker_urls[ $post_title ] = get_permalink( $post_id );
+            $post_slug  = get_post_field( 'post_name', $post_id );
+
+            if ( $stored_cms ) {
+                $this->speaker_id_map[ (string) $stored_cms ] = $permalink;
+            }
+            $this->speaker_urls[ $post_title ] = $permalink;
+            if ( $post_slug ) {
+                $this->speaker_slug_map[ $post_slug ] = $permalink;
+            }
         }
     }
 
     /**
-     * Extract speaker and moderator names from a section.
+     * Extract full speaker and moderator objects from a section.
+     * Returns an array of speaker arrays (with name, cms_id, etc.).
      */
-    private function extract_names( array $section ): array {
-        $names = [];
+    private function extract_speakers( array $section ): array {
+        $speakers = [];
         foreach ( $section['speakers'] ?? [] as $s ) {
             if ( ! empty( $s['name'] ) ) {
-                $names[] = $s['name'];
+                $speakers[] = $s;
             }
         }
         foreach ( $section['moderators'] ?? [] as $m ) {
             if ( ! empty( $m['name'] ) ) {
-                $names[] = $m['name'];
+                $speakers[] = $m;
             }
         }
-        return $names;
+        return $speakers;
     }
 
     /**
-     * Get the WordPress permalink for a speaker by name.
+     * Extract speaker and moderator names from a section.
      *
+     * @deprecated Use extract_speakers() instead.
+     */
+    private function extract_names( array $section ): array {
+        return array_column( $this->extract_speakers( $section ), 'name' );
+    }
+
+    /**
+     * Get the WordPress permalink for a speaker.
+     *
+     * Tries three methods in order:
+     *   1. CMS external ID stored in `cms_id` field from the agenda API
+     *   2. Lowercase post title match
+     *   3. Post slug derived from the speaker name
+     *
+     * @param array $speaker Speaker array from the agenda API.
      * @return string|null Permalink URL or null if not found.
      */
-    private function get_speaker_url( string $name ): ?string {
-        $key = mb_strtolower( $name );
-        return $this->speaker_urls[ $key ] ?? null;
+    private function get_speaker_url( array $speaker ): ?string {
+        // 1. CMS ID — most reliable, immune to name changes.
+        $cms_id = $speaker['cms_id'] ?? null; // adjust key if your API uses a different name
+        if ( $cms_id && isset( $this->speaker_id_map[ (string) $cms_id ] ) ) {
+            return $this->speaker_id_map[ (string) $cms_id ];
+        }
+
+        $name = $speaker['name'] ?? '';
+
+        // 2. Exact name match (lowercased).
+        $name_key = mb_strtolower( $name );
+        if ( $name_key && isset( $this->speaker_urls[ $name_key ] ) ) {
+            return $this->speaker_urls[ $name_key ];
+        }
+
+        // 3. Slug derived from name.
+        if ( $name ) {
+            $slug = sanitize_title( $name );
+            if ( isset( $this->speaker_slug_map[ $slug ] ) ) {
+                return $this->speaker_slug_map[ $slug ];
+            }
+        }
+
+        return null;
     }
 }
