@@ -839,6 +839,18 @@ class Sync_Engine {
                 return;
             }
 
+            // Remove stale tier terms under this year before assigning the new one.
+            $current_terms = wp_get_object_terms( $post_id, $taxonomy, [ 'fields' => 'ids' ] );
+            if ( ! is_wp_error( $current_terms ) && ! empty( $current_terms ) ) {
+                $old_tier_ids = array_values( array_filter( $current_terms, function( $term_id ) use ( $taxonomy, $year_term_id ) {
+                    $term = get_term( $term_id, $taxonomy );
+                    return $term && ! is_wp_error( $term ) && (int) $term->parent === $year_term_id;
+                } ) );
+                if ( ! empty( $old_tier_ids ) ) {
+                    wp_remove_object_terms( $post_id, $old_tier_ids, $taxonomy );
+                }
+            }
+
             wp_set_object_terms( $post_id, [ (int) $tier_term_id ], $taxonomy, true );
 
             // Save tier_sort_order as term meta so JetEngine listings can sort by it.
