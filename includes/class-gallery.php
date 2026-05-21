@@ -169,6 +169,7 @@ class Gallery {
     private function build_html( array $photos, int $columns ): string {
         ob_start();
         ?>
+        <h2 class="bpes-section-title" style="margin-top:30px;">Photo Gallery</h2>
         <div class="bpes-gallery" data-columns="<?php echo esc_attr( $columns ); ?>">
             <div class="bpes-gallery-grid" id="bpes-lightgallery-<?php echo esc_attr( wp_unique_id() ); ?>">
                 <?php foreach ( $photos as $index => $photo ) :
@@ -216,14 +217,12 @@ class Gallery {
         ob_start();
         ?>
         <div class="bpes-videos">
+            <h2 class="bpes-section-title">Video Highlights</h2>
             <?php if ( $hero ) : ?>
                 <div class="bpes-videos-hero">
                     <div class="bpes-video-embed">
                         <?php echo $this->get_video_iframe( $hero['url'] ); ?>
                     </div>
-                    <?php if ( ! empty( $hero['title'] ) ) : ?>
-                        <div class="bpes-video-title"><?php echo esc_html( $hero['title'] ); ?></div>
-                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 
@@ -234,9 +233,6 @@ class Gallery {
                             <div class="bpes-video-embed">
                                 <?php echo $this->get_video_iframe( $video['url'] ); ?>
                             </div>
-                            <?php if ( ! empty( $video['title'] ) ) : ?>
-                                <div class="bpes-video-title"><?php echo esc_html( $video['title'] ); ?></div>
-                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 </div>
