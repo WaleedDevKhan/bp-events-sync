@@ -76,47 +76,56 @@ class Gallery {
             $columns = 4;
         }
 
-        // Fetch photos (with caching).
-        $photos = $this->get_photos( $event_id, $cache );
+        // Fetch photos and videos (with caching).
+        $gallery_data = $this->get_gallery_data( $event_id, $cache );
 
-        if ( is_wp_error( $photos ) ) {
+        if ( is_wp_error( $gallery_data ) ) {
             if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-                return '<p class="bpes-gallery-error">Gallery error: ' . esc_html( $photos->get_error_message() ) . '</p>';
+                return '<p class="bpes-gallery-error">Gallery error: ' . esc_html( $gallery_data->get_error_message() ) . '</p>';
             }
             return '';
         }
 
-        if ( empty( $photos ) ) {
-            return '<p class="bpes-gallery-empty">No photos available for this event.</p>';
+        $photos = $gallery_data['photos'] ?? [];
+        $videos = $gallery_data['videos'] ?? [];
+
+        if ( empty( $photos ) && empty( $videos ) ) {
+            return '<p class="bpes-gallery-empty">No gallery data available for this event.</p>';
         }
 
         // Enqueue assets only when the shortcode is actually used.
         wp_enqueue_style( 'bpes-gallery' );
         wp_enqueue_script( 'bpes-gallery' );
 
-        return $this->build_html( $photos, $columns );
+        $html = '';
+        if ( ! empty( $videos ) ) {
+            $html .= $this->build_videos_html( $videos );
+        }
+        if ( ! empty( $photos ) ) {
+            $html .= $this->build_html( $photos, $columns );
+        }
+        return $html;
     }
 
     /**
-     * Fetch photos from the public endpoint with transient caching.
+     * Fetch photos and videos from the public endpoint with transient caching.
      *
      * @param string $event_id Event UUID.
      * @param int    $cache    Cache duration in seconds.
-     * @return array|\WP_Error Array of photo objects or error.
+     * @return array|\WP_Error Array with 'photos' and 'videos' keys, or error.
      */
-    private function get_photos( string $event_id, int $cache ) {
+    private function get_gallery_data( string $event_id, int $cache ) {
         $cache_key = 'bpes_gallery_' . md5( $event_id );
 
         if ( $cache > 0 ) {
             $cached = get_transient( $cache_key );
-            if ( false !== $cached ) {
+            if ( false !== $cached && is_array( $cached ) && isset( $cached['photos'] ) ) {
                 return $cached;
             }
         }
 
         $url = $this->settings->get_base_url() . '/r2/photos/' . urlencode( $event_id );
 
-        // Public endpoint — no auth headers needed.
         $response = wp_remote_get( $url, [
             'timeout' => 30,
             'headers' => [
@@ -142,40 +151,124 @@ class Gallery {
             return new \WP_Error( 'bpes_gallery_api', 'Photos API returned ok=false.' );
         }
 
-        $photos = $data['photos'] ?? [];
+        $result = [
+            'photos' => $data['photos'] ?? [],
+            'videos' => $data['videos'] ?? [],
+        ];
 
-        if ( $cache > 0 && ! empty( $photos ) ) {
-            set_transient( $cache_key, $photos, $cache );
+        if ( $cache > 0 && ( ! empty( $result['photos'] ) || ! empty( $result['videos'] ) ) ) {
+            set_transient( $cache_key, $result, $cache );
         }
 
-        return $photos;
+        return $result;
     }
 
     /**
-     * Build the gallery HTML.
+     * Build the photo gallery HTML.
      */
     private function build_html( array $photos, int $columns ): string {
         ob_start();
         ?>
         <div class="bpes-gallery" data-columns="<?php echo esc_attr( $columns ); ?>">
             <div class="bpes-gallery-grid" id="bpes-lightgallery-<?php echo esc_attr( wp_unique_id() ); ?>">
-                <?php foreach ( $photos as $index => $photo ) : ?>
+                <?php foreach ( $photos as $index => $photo ) :
+                    $caption = ! empty( $photo['caption'] ) ? $photo['caption'] : '';
+                    $sub_html = $caption ? '<p>' . esc_html( $caption ) . '</p>' : '&nbsp;';
+                    $alt = $caption ? $caption : 'Event photo ' . ( $index + 1 );
+                ?>
                     <div class="bpes-gallery-item"
                          data-src="<?php echo esc_url( $photo['mid'] ); ?>"
                          data-download-url="<?php echo esc_url( $photo['full'] ); ?>"
-                         data-sub-html="&nbsp;"
+                         data-sub-html="<?php echo esc_attr( $sub_html ); ?>"
                          data-thumb="<?php echo esc_url( $photo['thumb'] ); ?>"
                          data-zoom-src="<?php echo esc_url( $photo['full'] ); ?>">
                         <img
                             src="<?php echo esc_url( $photo['thumb'] ); ?>"
-                            alt="Event photo <?php echo esc_attr( $index + 1 ); ?>"
+                            alt="<?php echo esc_attr( $alt ); ?>"
                             loading="lazy"
                         />
+                        <?php if ( $caption ) : ?>
+                            <div class="bpes-gallery-caption"><?php echo esc_html( $caption ); ?></div>
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
             </div>
         </div>
         <?php
         return ob_get_clean();
+    }
+
+    /**
+     * Build the videos section HTML.
+     */
+    private function build_videos_html( array $videos ): string {
+        $hero = null;
+        $others = [];
+
+        foreach ( $videos as $video ) {
+            if ( ! empty( $video['is_hero'] ) && ! $hero ) {
+                $hero = $video;
+            } else {
+                $others[] = $video;
+            }
+        }
+
+        ob_start();
+        ?>
+        <div class="bpes-videos">
+            <?php if ( $hero ) : ?>
+                <div class="bpes-videos-hero">
+                    <div class="bpes-video-embed">
+                        <?php echo $this->get_video_iframe( $hero['url'] ); ?>
+                    </div>
+                    <?php if ( ! empty( $hero['title'] ) ) : ?>
+                        <div class="bpes-video-title"><?php echo esc_html( $hero['title'] ); ?></div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ( ! empty( $others ) ) : ?>
+                <div class="bpes-videos-grid" data-count="<?php echo esc_attr( count( $others ) ); ?>">
+                    <?php foreach ( $others as $video ) : ?>
+                        <div class="bpes-video-item">
+                            <div class="bpes-video-embed">
+                                <?php echo $this->get_video_iframe( $video['url'] ); ?>
+                            </div>
+                            <?php if ( ! empty( $video['title'] ) ) : ?>
+                                <div class="bpes-video-title"><?php echo esc_html( $video['title'] ); ?></div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Convert a video URL to an embeddable iframe.
+     */
+    private function get_video_iframe( string $url ): string {
+        $embed_url = $this->parse_embed_url( $url );
+        if ( ! $embed_url ) {
+            return '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">' . esc_html( $url ) . '</a>';
+        }
+        return '<iframe src="' . esc_url( $embed_url ) . '" frameborder="0" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>';
+    }
+
+    /**
+     * Parse YouTube or Vimeo URL into embed URL.
+     */
+    private function parse_embed_url( string $url ): ?string {
+        // YouTube: various formats
+        if ( preg_match( '/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/', $url, $m ) ) {
+            return 'https://www.youtube.com/embed/' . $m[1];
+        }
+        // Vimeo
+        if ( preg_match( '/vimeo\.com\/(\d+)/', $url, $m ) ) {
+            return 'https://player.vimeo.com/video/' . $m[1];
+        }
+        return null;
     }
 }
