@@ -86,7 +86,7 @@ class Plugin {
         add_filter( 'jet-engine/listing/grid/posts-query-args', [ $this, 'sort_jet_listing_by_menu_order' ] );
 
         // Auto-sort JetEngine terms listings by tier_sort_order for sponsor tiers.
-        // add_filter( 'jet-engine/listing/grid/terms-query-args', [ $this, 'sort_jet_terms_by_tier_order' ] );
+        add_filter( 'jet-engine/listing/grid/terms-query-args', [ $this, 'sort_jet_terms_by_tier_order' ] );
 
     }
 
@@ -100,11 +100,13 @@ class Plugin {
             return;
         }
 
-        if ( ! ( $query->is_post_type_archive() || $query->is_tax() ) ) {
-            return;
+        // For tax archives, derive post_type from the taxonomy's object_type.
+        if ( $query->is_tax() ) {
+            $tax_obj   = get_taxonomy( $query->get( 'taxonomy' ) );
+            $post_type = $tax_obj ? ( $tax_obj->object_type[0] ?? '' ) : '';
+        } else {
+            $post_type = $query->get( 'post_type' );
         }
-
-        $post_type = $query->get( 'post_type' );
 
         // Get mapped CPT slugs for speakers and judges only (not sponsors).
         $cpt_mapping  = $this->settings->get_cpt_mapping();

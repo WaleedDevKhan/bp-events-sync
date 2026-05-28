@@ -169,7 +169,7 @@ class Gallery {
     private function build_html( array $photos, int $columns ): string {
         ob_start();
         ?>
-        <h2 class="bpes-section-title" style="margin-top:30px;">Photo Gallery</h2>
+        <h2 class="bpes-section-title bpes-section-photo-title">Photo Gallery</h2>
         <div class="bpes-gallery" data-columns="<?php echo esc_attr( $columns ); ?>">
             <div class="bpes-gallery-grid" id="bpes-lightgallery-<?php echo esc_attr( wp_unique_id() ); ?>">
                 <?php foreach ( $photos as $index => $photo ) :
