@@ -181,11 +181,14 @@ class Plugin {
         }
 
         // Only apply to years >= BPES_MIN_SYNC_YEAR; leave older listings untouched.
-        $parent_id = isset( $args['parent'] ) ? (int) $args['parent'] : 0;
-        if ( $parent_id > 0 ) {
-            $parent_term = get_term( $parent_id, $taxonomy );
-            if ( $parent_term && ! is_wp_error( $parent_term ) ) {
-                preg_match( '/\b(20\d{2})\b/', $parent_term->name, $m );
+        $ancestor_id = isset( $args['child_of'] ) ? (int) $args['child_of'] : 0;
+        if ( ! $ancestor_id ) {
+            $ancestor_id = isset( $args['parent'] ) ? (int) $args['parent'] : 0;
+        }
+        if ( $ancestor_id > 0 ) {
+            $ancestor_term = get_term( $ancestor_id, $taxonomy );
+            if ( $ancestor_term && ! is_wp_error( $ancestor_term ) ) {
+                preg_match( '/\b(20\d{2})\b/', $ancestor_term->name, $m );
                 if ( ! empty( $m[1] ) && (int) $m[1] < BPES_MIN_SYNC_YEAR ) {
                     return $args;
                 }
