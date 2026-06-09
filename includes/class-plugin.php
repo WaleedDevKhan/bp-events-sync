@@ -180,6 +180,18 @@ class Plugin {
             return $args;
         }
 
+        // Only apply to years >= BPES_MIN_SYNC_YEAR; leave older listings untouched.
+        $parent_id = isset( $args['parent'] ) ? (int) $args['parent'] : 0;
+        if ( $parent_id > 0 ) {
+            $parent_term = get_term( $parent_id, $taxonomy );
+            if ( $parent_term && ! is_wp_error( $parent_term ) ) {
+                preg_match( '/\b(20\d{2})\b/', $parent_term->name, $m );
+                if ( ! empty( $m[1] ) && (int) $m[1] < BPES_MIN_SYNC_YEAR ) {
+                    return $args;
+                }
+            }
+        }
+
         $args['orderby'] = 'tier_order_clause';
         $args['order']   = 'ASC';
 
