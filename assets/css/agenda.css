@@ -120,7 +120,6 @@
     line-height: 1.6;
     margin-bottom: 16px;
     font-family: var(--bpes-font);
-    white-space: pre-line;
 }
 
 .bpes-agenda-subtitle ul {
