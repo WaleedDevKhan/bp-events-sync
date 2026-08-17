@@ -80,8 +80,9 @@ class API_Client {
     public function fetch_speakers( string $type = 'speaker' ): array|\WP_Error {
         return $this->fetch_all_pages( '/admin/speakers/live', [
             'event'    => $this->settings->get_event_name(),
-            'type'     => $type,
+            'type'     => $type . ',moderator',
             'pageSize' => 200,
+            'order'    => 'sort_order',
         ] );
     }
 
