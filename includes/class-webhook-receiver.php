@@ -28,6 +28,7 @@ class Webhook_Receiver {
     public function register_hooks(): void {
         add_action( 'rest_api_init', [ $this, 'register_route' ] );
         add_action( 'bpes_agenda_cache_clear', [ $this, 'run_agenda_cache_clear' ] );
+        add_action( 'bpes_webhook_sync',        [ $this, 'run_scheduled_sync' ], 10, 3 );
     }
 
     /**
@@ -98,40 +99,106 @@ class Webhook_Receiver {
             return new \WP_REST_Response( [ 'ok' => true, 'message' => "Type '{$type}' not enabled on this site, ignored" ], 200 );
         }
 
-        // Run targeted sync if entity_id is present, otherwise full sync (e.g. reorder).
+        // Run targeted sync if entity_id is present.
+        // For full syncs (e.g. tiers_reordered) schedule via WP-Cron so we can
+        // return 200 immediately — the CMS has a short timeout per webhook call.
         $entity_id = sanitize_text_field( $data['entity_id'] ?? '' );
 
         if ( ! empty( $entity_id ) ) {
             $result = $this->sync->run_for_webhook( $type, $entity_id, $action );
-        } else {
-            $result = $this->sync->run( $type, 'id' );
+
+            if ( is_wp_error( $result ) ) {
+                $this->log( $event_name, $type, $action, 'error', $result->get_error_message() );
+                return new \WP_REST_Response(
+                    [ 'ok' => false, 'error' => $result->get_error_message() ],
+                    500
+                );
+            }
+
+            $errors  = (int) ( $result['errors'] ?? 0 );
+            $synced  = ( $result['created'] ?? 0 ) + ( $result['updated'] ?? 0 ) + ( $result['deleted'] ?? 0 );
+
+            $has_warnings = (bool) array_filter( $result['log'] ?? [], function ( $line ) {
+                return preg_match( '/(Failed|Error:)/i', $line );
+            } );
+
+            if ( $errors > 0 && $synced === 0 ) {
+                $status = 'error';
+            } elseif ( $has_warnings ) {
+                $status = 'warning';
+            } else {
+                $status = 'success';
+            }
+
+            $summary = sprintf(
+                'Created: %d, Updated: %d, Deleted: %d, Errors: %d.',
+                $result['created'] ?? 0,
+                $result['updated'] ?? 0,
+                $result['deleted'] ?? 0,
+                $errors
+            );
+
+            $strip_ts = function ( string $line ): string {
+                return preg_replace( '/^\[\d{2}:\d{2}:\d{2}\]\s*/', '', $line );
+            };
+
+            $detail_lines = array_filter( $result['log'] ?? [], function ( $line ) {
+                return preg_match( '/(Created:|Updated:|Deleted:)/i', $line );
+            } );
+            if ( ! empty( $detail_lines ) ) {
+                $summary .= ' ' . implode( ' | ', array_map( $strip_ts, $detail_lines ) );
+            }
+
+            $error_lines = array_filter( $result['log'] ?? [], function ( $line ) {
+                return preg_match( '/(Error:|Failed|falling back)/i', $line );
+            } );
+            if ( ! empty( $error_lines ) ) {
+                $summary .= ' — ' . implode( ' | ', array_map( $strip_ts, $error_lines ) );
+            }
+
+            $this->log( $event_name, $type, $action, $status, $summary );
+
+            return new \WP_REST_Response( [
+                'ok'     => true,
+                'type'   => $type,
+                'action' => $action,
+                'result' => $result,
+            ], 200 );
         }
+
+        // Full sync (no entity_id) — schedule immediately and return 200 fast.
+        wp_schedule_single_event( time(), 'bpes_webhook_sync', [ $type, $event_name, $action ] );
+        $this->log( $event_name, $type, $action, 'success', 'Full sync scheduled via cron.' );
+
+        return new \WP_REST_Response( [ 'ok' => true, 'message' => 'Sync scheduled' ], 200 );
+    }
+
+    /**
+     * WP-Cron callback — runs a full sync for a given type.
+     */
+    public function run_scheduled_sync( string $type, string $event_name, string $action ): void {
+        $result = $this->sync->run( $type, 'id' );
 
         if ( is_wp_error( $result ) ) {
             $this->log( $event_name, $type, $action, 'error', $result->get_error_message() );
-            return new \WP_REST_Response(
-                [ 'ok' => false, 'error' => $result->get_error_message() ],
-                500
-            );
+            return;
         }
 
         $errors  = (int) ( $result['errors'] ?? 0 );
         $synced  = ( $result['created'] ?? 0 ) + ( $result['updated'] ?? 0 ) + ( $result['deleted'] ?? 0 );
 
-        // Detect non-critical failures in the engine log (e.g. image download errors).
         $has_warnings = (bool) array_filter( $result['log'] ?? [], function ( $line ) {
             return preg_match( '/(Failed|Error:)/i', $line );
         } );
 
         if ( $errors > 0 && $synced === 0 ) {
-            $status = 'error';   // Hard failure — nothing was synced.
+            $status = 'error';
         } elseif ( $has_warnings ) {
-            $status = 'warning'; // Synced OK but something minor failed (e.g. image).
+            $status = 'warning';
         } else {
             $status = 'success';
         }
 
-        // Build summary line.
         $summary = sprintf(
             'Created: %d, Updated: %d, Deleted: %d, Errors: %d.',
             $result['created'] ?? 0,
@@ -140,12 +207,10 @@ class Webhook_Receiver {
             $errors
         );
 
-        // Strip [HH:MM:SS] prefix from engine log lines.
         $strip_ts = function ( string $line ): string {
             return preg_replace( '/^\[\d{2}:\d{2}:\d{2}\]\s*/', '', $line );
         };
 
-        // Append item-level detail lines (what was created/updated/deleted and how).
         $detail_lines = array_filter( $result['log'] ?? [], function ( $line ) {
             return preg_match( '/(Created:|Updated:|Deleted:)/i', $line );
         } );
@@ -153,7 +218,6 @@ class Webhook_Receiver {
             $summary .= ' ' . implode( ' | ', array_map( $strip_ts, $detail_lines ) );
         }
 
-        // Append any error or warning lines so failures are always visible.
         $error_lines = array_filter( $result['log'] ?? [], function ( $line ) {
             return preg_match( '/(Error:|Failed|falling back)/i', $line );
         } );
@@ -162,13 +226,6 @@ class Webhook_Receiver {
         }
 
         $this->log( $event_name, $type, $action, $status, $summary );
-
-        return new \WP_REST_Response( [
-            'ok'     => true,
-            'type'   => $type,
-            'action' => $action,
-            'result' => $result,
-        ], 200 );
     }
 
     /**
