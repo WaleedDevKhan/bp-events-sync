@@ -113,7 +113,7 @@ class Sync_Engine {
      * @param string $action    'upsert' | 'delete'
      * @return array|\WP_Error
      */
-    public function run_for_webhook( string $type, string $entity_id, string $action ) {
+    public function run_for_webhook( string $type, string $entity_id, string $action, ?int $event_year = null ) {
         $this->log = [];
 
         if ( ! $this->settings->is_type_configured( $type ) ) {
@@ -122,7 +122,8 @@ class Sync_Engine {
 
         $post_type = $this->settings->get_cpt_slug( $type );
 
-        // Deletion — item is already gone from CMS, just trash the WP post.
+        // Deletion — use year-aware logic: remove the specific year term first,
+        // only trash the post if no year terms remain.
         if ( $action === 'delete' ) {
             $post_id = $this->find_post_by_external_id( $entity_id, $post_type );
 
@@ -131,9 +132,32 @@ class Sync_Engine {
                 return [ 'created' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => 0, 'deleted' => 0, 'total' => 0, 'log' => $this->log ];
             }
 
-            $title = get_the_title( $post_id );
-            wp_trash_post( $post_id );
-            $this->log( sprintf( 'Deleted: "%s" (Post ID: %d, matched by ID)', $title, $post_id ) );
+            $title    = get_the_title( $post_id );
+            $taxonomy = $this->settings->get_tax_slug( $type );
+
+            // Skip deletions for years below the minimum sync year.
+            if ( $event_year && $event_year < BPES_MIN_SYNC_YEAR ) {
+                $this->log( sprintf( 'Deletion skipped: "%s" — year %d is below minimum sync year.', $title, $event_year ) );
+                return [ 'created' => 0, 'updated' => 0, 'skipped' => 1, 'errors' => 0, 'deleted' => 0, 'total' => 1, 'log' => $this->log ];
+            }
+
+            // Remove the specific year term if we know which year was deleted.
+            if ( $event_year && ! empty( $taxonomy ) ) {
+                $this->remove_year_terms( $post_id, (string) $event_year, $taxonomy, $type );
+                $this->log( sprintf( 'Removed year "%d" from: "%s" (Post ID: %d)', $event_year, $title, $post_id ) );
+            }
+
+            // Check remaining year associations (direct year terms OR child tier terms whose parent is a year).
+            $remaining_years = ! empty( $taxonomy ) ? $this->get_remaining_year_names( $post_id, $taxonomy ) : [];
+
+            if ( empty( $remaining_years ) ) {
+                wp_trash_post( $post_id );
+                $this->log( sprintf( 'Trashed: "%s" (Post ID: %d) — no remaining year categories.', $title, $post_id ) );
+                $this->clear_server_cache();
+                return [ 'created' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => 0, 'deleted' => 1, 'total' => 1, 'log' => $this->log ];
+            }
+
+            $this->log( sprintf( 'Deleted: "%s" from year %d (Post ID: %d) — post kept, still in: %s', $title, $event_year, $post_id, implode( ', ', $remaining_years ) ) );
             $this->clear_server_cache();
             return [ 'created' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => 0, 'deleted' => 1, 'total' => 1, 'log' => $this->log ];
         }
@@ -283,20 +307,10 @@ class Sync_Engine {
                 ) );
             }
 
-            // Check if the post has any remaining year categories.
-            $remaining_terms = wp_get_object_terms( $post_id, $taxonomy, [ 'fields' => 'all' ] );
+            // Check if the post has any remaining year associations.
+            $remaining_year_names = $this->get_remaining_year_names( $post_id, $taxonomy );
 
-            // Filter to only top-level year terms (parent = 0).
-            $remaining_years = [];
-            if ( ! is_wp_error( $remaining_terms ) ) {
-                foreach ( $remaining_terms as $term ) {
-                    if ( (int) $term->parent === 0 ) {
-                        $remaining_years[] = $term;
-                    }
-                }
-            }
-
-            if ( empty( $remaining_years ) ) {
+            if ( empty( $remaining_year_names ) ) {
                 // No year categories left — trash the post.
                 $result = wp_trash_post( $post_id );
 
@@ -315,12 +329,11 @@ class Sync_Engine {
                     ) );
                 }
             } else {
-                $year_names = array_map( function ( $t ) { return $t->name; }, $remaining_years );
                 $this->log( sprintf(
                     'Kept: "%s" (Post ID: %d) — still assigned to: %s',
                     $entity_name,
                     $post_id,
-                    implode( ', ', $year_names )
+                    implode( ', ', $remaining_year_names )
                 ) );
             }
         }
@@ -329,6 +342,39 @@ class Sync_Engine {
         $this->settings->update_last_deletion_sync();
 
         return $trashed;
+    }
+
+    /**
+     * Return the names of year terms still associated with a post.
+     *
+     * Handles the case where a sponsor has only a child tier term (e.g. "silver-sponsor")
+     * without the parent year term (e.g. "2025") directly attached. We walk up one level
+     * to count those as still belonging to that year.
+     *
+     * @param int    $post_id  WordPress post ID.
+     * @param string $taxonomy Taxonomy slug.
+     * @return string[] Unique year names.
+     */
+    private function get_remaining_year_names( int $post_id, string $taxonomy ): array {
+        $terms = wp_get_object_terms( $post_id, $taxonomy, [ 'fields' => 'all' ] );
+        if ( is_wp_error( $terms ) ) {
+            return [];
+        }
+
+        $year_names = [];
+        foreach ( $terms as $term ) {
+            if ( (int) $term->parent === 0 ) {
+                $year_names[] = $term->name;
+            } else {
+                // Child tier term — check if its parent is a root-level year term.
+                $parent = get_term( (int) $term->parent, $taxonomy );
+                if ( $parent && ! is_wp_error( $parent ) && (int) $parent->parent === 0 ) {
+                    $year_names[] = $parent->name;
+                }
+            }
+        }
+
+        return array_unique( $year_names );
     }
 
     /**

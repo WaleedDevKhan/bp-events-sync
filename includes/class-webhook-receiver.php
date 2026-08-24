@@ -102,10 +102,11 @@ class Webhook_Receiver {
         // Run targeted sync if entity_id is present.
         // For full syncs (e.g. tiers_reordered) schedule via WP-Cron so we can
         // return 200 immediately — the CMS has a short timeout per webhook call.
-        $entity_id = sanitize_text_field( $data['entity_id'] ?? '' );
+        $entity_id  = sanitize_text_field( $data['entity_id'] ?? '' );
+        $event_year = isset( $data['event_year'] ) && is_numeric( $data['event_year'] ) ? (int) $data['event_year'] : null;
 
         if ( ! empty( $entity_id ) ) {
-            $result = $this->sync->run_for_webhook( $type, $entity_id, $action );
+            $result = $this->sync->run_for_webhook( $type, $entity_id, $action, $event_year );
 
             if ( is_wp_error( $result ) ) {
                 $this->log( $event_name, $type, $action, 'error', $result->get_error_message() );

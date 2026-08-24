@@ -433,12 +433,88 @@ class Agenda {
      *   2. lowercase name  → permalink  (fallback)
      *   3. post slug       → permalink  (last resort)
      */
+    // private function build_speaker_url_cache( array $page_blocks ): void {
+    //     $this->speaker_urls     = [];
+    //     $this->speaker_id_map   = [];
+    //     $this->speaker_slug_map = [];
+
+    //     // Collect all unique speakers (as full objects, not just names).
+    //     $speakers_raw = [];
+    //     foreach ( $page_blocks as $block ) {
+    //         if ( $block['kind'] === 'section' ) {
+    //             $speakers_raw = array_merge( $speakers_raw, $this->extract_speakers( $block ) );
+    //         } elseif ( $block['kind'] === 'stream_group' ) {
+    //             foreach ( $block['streams'] ?? [] as $stream ) {
+    //                 foreach ( $stream['sections'] ?? [] as $section ) {
+    //                     $speakers_raw = array_merge( $speakers_raw, $this->extract_speakers( $section ) );
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     if ( empty( $speakers_raw ) ) {
+    //         return;
+    //     }
+
+    //     // Collect unique CMS IDs from the agenda API data.
+    //     $cms_ids = [];
+    //     foreach ( $speakers_raw as $s ) {
+    //         $cms_id = $s['speaker_id'] ?? null; // adjust key if your API uses a different name
+    //         if ( $cms_id ) {
+    //             $cms_ids[] = (string) $cms_id;
+    //         }
+    //     }
+    //     $cms_ids = array_unique( $cms_ids );
+
+    //     // Get the speaker and judge CPT slugs.
+    //     $cpt_mapping = $this->settings->get_cpt_mapping();
+    //     $post_types  = array_filter( [
+    //         $cpt_mapping['speakers'] ?? '',
+    //         $cpt_mapping['judges']   ?? '',
+    //     ] );
+
+    //     if ( empty( $post_types ) ) {
+    //         return;
+    //     }
+
+    //     // Single query — if we have CMS IDs, limit to only those posts for
+    //     // efficiency; otherwise fall back to loading all speaker posts.
+    //     $query_args = [
+    //         'post_type'      => $post_types,
+    //         'post_status'    => 'publish',
+    //         'posts_per_page' => -1,
+    //         'no_found_rows'  => true,
+    //         'fields'         => 'ids',
+    //     ];
+
+    //     $query = new \WP_Query( $query_args );
+
+    //     if ( empty( $query->posts ) ) {
+    //         return;
+    //     }
+
+    //     // Build all three maps in one pass.
+    //     foreach ( $query->posts as $post_id ) {
+    //         $permalink  = get_permalink( $post_id );
+    //         $stored_cms = get_post_meta( $post_id, Sync_Engine::META_EXTERNAL_ID, true );
+    //         $post_title = mb_strtolower( get_the_title( $post_id ) );
+    //         $post_slug  = get_post_field( 'post_name', $post_id );
+
+    //         if ( $stored_cms ) {
+    //             $this->speaker_id_map[ (string) $stored_cms ] = $permalink;
+    //         }
+    //         $this->speaker_urls[ $post_title ] = $permalink;
+    //         if ( $post_slug ) {
+    //             $this->speaker_slug_map[ $post_slug ] = $permalink;
+    //         }
+    //     }
+    // }
+
     private function build_speaker_url_cache( array $page_blocks ): void {
         $this->speaker_urls     = [];
         $this->speaker_id_map   = [];
         $this->speaker_slug_map = [];
 
-        // Collect all unique speakers (as full objects, not just names).
         $speakers_raw = [];
         foreach ( $page_blocks as $block ) {
             if ( $block['kind'] === 'section' ) {
@@ -456,17 +532,17 @@ class Agenda {
             return;
         }
 
-        // Collect unique CMS IDs from the agenda API data.
-        $cms_ids = [];
+        // Deduplicate by name.
+        $seen            = [];
+        $unique_speakers = [];
         foreach ( $speakers_raw as $s ) {
-            $cms_id = $s['speaker_id'] ?? null; // adjust key if your API uses a different name
-            if ( $cms_id ) {
-                $cms_ids[] = (string) $cms_id;
+            $key = mb_strtolower( $s['name'] ?? '' );
+            if ( $key && ! isset( $seen[ $key ] ) ) {
+                $seen[ $key ]      = true;
+                $unique_speakers[] = $s;
             }
         }
-        $cms_ids = array_unique( $cms_ids );
 
-        // Get the speaker and judge CPT slugs.
         $cpt_mapping = $this->settings->get_cpt_mapping();
         $post_types  = array_filter( [
             $cpt_mapping['speakers'] ?? '',
@@ -477,34 +553,95 @@ class Agenda {
             return;
         }
 
-        // Single query — if we have CMS IDs, limit to only those posts for
-        // efficiency; otherwise fall back to loading all speaker posts.
-        $query_args = [
-            'post_type'      => $post_types,
-            'post_status'    => 'publish',
-            'posts_per_page' => -1,
-            'no_found_rows'  => true,
-            'fields'         => 'ids',
-        ];
+        // Collect CMS IDs from speakers that have one.
+        $cms_ids = [];
+        foreach ( $unique_speakers as $s ) {
+            $cms_id = $s['speaker_id'] ?? null;
+            if ( $cms_id ) {
+                $cms_ids[] = (string) $cms_id;
+            }
+        }
+        $cms_ids = array_unique( $cms_ids );
 
-        $query = new \WP_Query( $query_args );
+        // Phase 1: query only posts whose META_EXTERNAL_ID is in our cms_id list.
+        if ( ! empty( $cms_ids ) ) {
+            $q1 = new \WP_Query( [
+                'post_type'      => $post_types,
+                'post_status'    => 'publish',
+                'posts_per_page' => -1,
+                'no_found_rows'  => true,
+                'fields'         => 'ids',
+                'meta_query'     => [ [
+                    'key'     => Sync_Engine::META_EXTERNAL_ID,
+                    'value'   => $cms_ids,
+                    'compare' => 'IN',
+                ] ],
+            ] );
 
-        if ( empty( $query->posts ) ) {
+            foreach ( $q1->posts as $post_id ) {
+                $permalink  = get_permalink( $post_id );
+                $stored_cms = get_post_meta( $post_id, Sync_Engine::META_EXTERNAL_ID, true );
+                $post_title = mb_strtolower( get_the_title( $post_id ) );
+                $post_slug  = get_post_field( 'post_name', $post_id );
+
+                if ( $stored_cms ) {
+                    $this->speaker_id_map[ (string) $stored_cms ] = $permalink;
+                }
+                $this->speaker_urls[ $post_title ] = $permalink;
+                if ( $post_slug ) {
+                    $this->speaker_slug_map[ $post_slug ] = $permalink;
+                }
+            }
+        }
+
+        // Phase 2: find speakers still unresolved after Phase 1 and query by slug.
+        $unresolved_slugs = [];
+        foreach ( $unique_speakers as $s ) {
+            $cms_id   = isset( $s['speaker_id'] ) ? (string) $s['speaker_id'] : null;
+            $name_key = mb_strtolower( $s['name'] ?? '' );
+
+            if ( $cms_id && isset( $this->speaker_id_map[ $cms_id ] ) ) {
+                continue; // resolved by cms_id
+            }
+            if ( $name_key && isset( $this->speaker_urls[ $name_key ] ) ) {
+                continue; // resolved by name (Phase 1 still found them)
+            }
+
+            $name = $s['name'] ?? '';
+            if ( $name ) {
+                $unresolved_slugs[] = sanitize_title( $name );
+            }
+        }
+
+        $unresolved_slugs = array_unique( array_filter( $unresolved_slugs ) );
+
+        if ( empty( $unresolved_slugs ) ) {
             return;
         }
 
-        // Build all three maps in one pass.
-        foreach ( $query->posts as $post_id ) {
+        // Query only the unresolved speakers by their post slug.
+        $q2 = new \WP_Query( [
+            'post_type'      => $post_types,
+            'post_status'    => 'publish',
+            'posts_per_page' => count( $unresolved_slugs ),
+            'no_found_rows'  => true,
+            'fields'         => 'ids',
+            'post_name__in'  => $unresolved_slugs,
+        ] );
+
+        foreach ( $q2->posts as $post_id ) {
             $permalink  = get_permalink( $post_id );
             $stored_cms = get_post_meta( $post_id, Sync_Engine::META_EXTERNAL_ID, true );
             $post_title = mb_strtolower( get_the_title( $post_id ) );
             $post_slug  = get_post_field( 'post_name', $post_id );
 
-            if ( $stored_cms ) {
+            if ( $stored_cms && ! isset( $this->speaker_id_map[ (string) $stored_cms ] ) ) {
                 $this->speaker_id_map[ (string) $stored_cms ] = $permalink;
             }
-            $this->speaker_urls[ $post_title ] = $permalink;
-            if ( $post_slug ) {
+            if ( ! isset( $this->speaker_urls[ $post_title ] ) ) {
+                $this->speaker_urls[ $post_title ] = $permalink;
+            }
+            if ( $post_slug && ! isset( $this->speaker_slug_map[ $post_slug ] ) ) {
                 $this->speaker_slug_map[ $post_slug ] = $permalink;
             }
         }
