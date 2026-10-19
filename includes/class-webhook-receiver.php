@@ -27,7 +27,8 @@ class Webhook_Receiver {
 
     public function register_hooks(): void {
         add_action( 'rest_api_init', [ $this, 'register_route' ] );
-        add_action( 'bpes_agenda_cache_clear', [ $this, 'run_agenda_cache_clear' ] );
+        add_action( 'bpes_agenda_cache_clear',  [ $this, 'run_agenda_cache_clear' ] );
+        add_action( 'bpes_gallery_cache_clear', [ $this, 'run_gallery_cache_clear' ] );
         add_action( 'bpes_webhook_sync',        [ $this, 'run_scheduled_sync' ], 10, 3 );
     }
 
@@ -87,6 +88,16 @@ class Webhook_Receiver {
             }
             wp_schedule_single_event( time() + 120, 'bpes_agenda_cache_clear' );
             return new \WP_REST_Response( [ 'ok' => true, 'message' => 'Agenda cache clear scheduled' ], 200 );
+        }
+
+        // Gallery webhooks — same debounce pattern as agenda.
+        if ( $type === 'gallery' ) {
+            $pending = wp_next_scheduled( 'bpes_gallery_cache_clear' );
+            if ( $pending ) {
+                wp_unschedule_event( $pending, 'bpes_gallery_cache_clear' );
+            }
+            wp_schedule_single_event( time() + 120, 'bpes_gallery_cache_clear' );
+            return new \WP_REST_Response( [ 'ok' => true, 'message' => 'Gallery cache clear scheduled' ], 200 );
         }
 
         if ( ! in_array( $type, [ 'sponsors', 'speakers', 'judges' ], true ) ) {
@@ -248,6 +259,43 @@ class Webhook_Receiver {
             "DELETE FROM {$wpdb->options}
              WHERE option_name LIKE '_transient_bpes_agenda_%'
              OR option_name LIKE '_transient_timeout_bpes_agenda_%'"
+        );
+
+        wp_cache_flush();
+
+        $cache_dir = '/var/run/nginx-cache';
+        if ( is_dir( $cache_dir ) ) {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator( $cache_dir, \RecursiveDirectoryIterator::SKIP_DOTS ),
+                \RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ( $iterator as $file ) {
+                if ( $file->isFile() ) {
+                    @unlink( $file->getPathname() );
+                }
+            }
+        }
+    }
+
+    /**
+     * WP-Cron callback — clears gallery caches after the 2-minute delay.
+     */
+    public function run_gallery_cache_clear(): void {
+        $this->clear_gallery_cache();
+        $event_name = $this->settings->get_event_name();
+        $this->log( $event_name, 'gallery', 'updated', 'success', 'Gallery cache cleared.' );
+    }
+
+    /**
+     * Clear all gallery transients and FastCGI cache.
+     */
+    private function clear_gallery_cache(): void {
+        global $wpdb;
+
+        $wpdb->query(
+            "DELETE FROM {$wpdb->options}
+             WHERE option_name LIKE '_transient_bpes_gallery_%'
+             OR option_name LIKE '_transient_timeout_bpes_gallery_%'"
         );
 
         wp_cache_flush();
